@@ -1,21 +1,18 @@
 import os
 import logging
-import asyncio
 from datetime import time
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 import pytz
 
-# Logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
 TOKEN = os.environ.get("TOKEN")
-CHAT_IDS = set() # Yahan sab users ki ID save hogi
+CHAT_IDS = set()
 
-# 40 Din ka Sabaq List
 SABAQ = [
     "Day 1: Aaj sirf 'Alhamdulillah' 100 baar dil se kaho. Har haal mein shukr.",
     "Day 2: Aaj kisi 1 shakhs ko maaf kar do. Dil ka bojh halka ho jayega.",
@@ -67,66 +64,93 @@ TASBEEH = [
     "5. Durood Shareef 10 baar"
 ]
 
-# /start command
+# BUTTONS WALA /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     CHAT_IDS.add(chat_id)
     user_name = update.effective_user.first_name
 
+    # Buttons banao
+    keyboard = [
+        [InlineKeyboardButton("📿 Tasbeeh", callback_data='tasbeeh')],
+        [InlineKeyboardButton("💎 Premium", callback_data='premium')],
+        [InlineKeyboardButton("📱 QR Support", callback_data='qr')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     await update.message.reply_text(
         f"Assalamualaikum {user_name} 🌙\n\n"
         f"40 Din Sakoon ke safar mein khush amadeed.\n\n"
         f"Roz subah 6 baje naya sabaq milega.\n\n"
-        f"Commands:\n"
-        f"/sabaq - Aaj ka sabaq\n"
-        f"/tasbeeh - Aaj ki tasbeeh\n"
-        f"/safar - Safar dobara shuru karo"
+        f"Neeche button dabao ya command bhejo:\n"
+        f"/sabaq /safar /qr",
+        reply_markup=reply_markup
     )
 
-# /sabaq command
+# BUTTON DABNE PAR KAAM
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == 'tasbeeh':
+        tasbeeh_text = "\n".join(TASBEEH)
+        await query.message.reply_text(f"📿 Aaj ki Tasbeeh:\n\n{tasbeeh_text}\n\nDil se, dhyaan se padhna.")
+
+    elif query.data == 'premium':
+        await query.message.reply_text(
+            "💎 *Sakoon Premium* 💎\n\n"
+            "Premium mein milega:\n"
+            "1. 40 din ke baad bhi roz naya sabaq\n"
+            "2. Audio bayan har jummah\n"
+            "3. Private dua group mein add\n"
+            "Abhi ke liye free hai. Shukr ke saath istemaal karo.\n\n"
+            "Support karna chaho to /qr dabao.",
+            parse_mode='Markdown'
+        )
+
+    elif query.data == 'qr':
+        try:
+            await context.bot.send_photo(
+                chat_id=query.message.chat_id,
+                photo=open('qr.png', 'rb'),
+                caption="💚 Agar ye safar pasand aaye to support kar sakte hain.\n\n"
+                        "JazakAllah Khair. Aapke support se aur logon tak sukoon pahuchega."
+            )
+        except:
+            await query.message.reply_text("QR code abhi load nahi ho pa raha. qr.png upload kiya hai na?")
+
 async def sabaq(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    day = len(CHAT_IDS) % 40 # Simple logic. Behtar: DB use karo
+    day = len(CHAT_IDS) % 40
     await update.message.reply_text(f"📖 Aaj ka Sabaq:\n\n{SABAQ[day]}")
 
-# /tasbeeh command
-async def tasbeeh(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tasbeeh_text = "\n".join(TASBEEH)
-    await update.message.reply_text(f"📿 Aaj ki Tasbeeh:\n\n{tasbeeh_text}\n\nDil se, dhyaan se padhna.")
-
-# /safar command
 async def safar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     CHAT_IDS.add(chat_id)
     await update.message.reply_text(
         "Alhamdulillah! Tumhara 40 din ka safar shuru ✅\n\n"
-        "Kal subah 6 baje pehla sabaq milega InshaAllah.\n"
-        "Sabr, shukr aur istiqamat."
+        "Kal subah 6 baje pehla sabaq milega InshaAllah."
     )
 
-# Daily sabaq bhejne wala function
 async def daily_sabaq(context: ContextTypes.DEFAULT_TYPE):
     day = context.job.data
     sabaq_text = SABAQ[day % 40]
-
     for chat_id in CHAT_IDS:
         try:
             await context.bot.send_message(
                 chat_id=chat_id,
-                text=f"🌅 Subah Bakhair\n📖 Day {day+1} ka Sabaq:\n\n{sabaq_text}\n\n/tasbeeh bhej kar tasbeeh le lena."
+                text=f"🌅 Subah Bakhair\n📖 Day {day+1} ka Sabaq:\n\n{sabaq_text}\n\nNeeche button se /tasbeeh le lena."
             )
         except:
-            pass # User ne block kar diya hoga
+            pass
 
 def main():
     app = Application.builder().token(TOKEN).build()
 
-    # Commands
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("sabaq", sabaq))
-    app.add_handler(CommandHandler("tasbeeh", tasbeeh))
     app.add_handler(CommandHandler("safar", safar))
+    app.add_handler(CallbackQueryHandler(button_handler)) # NAYA - Button ke liye
 
-    # Roz subah 6 baje India time pe sabaq bhejo
     job_queue = app.job_queue
     job_queue.run_daily(daily_sabaq, time(hour=6, minute=0, tzinfo=pytz.timezone('Asia/Kolkata')), data=0)
 
